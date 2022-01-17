@@ -38,7 +38,32 @@ process_execute (char **argv)
   if (fn_copy == NULL)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
+  
+  int size = PGSIZE;
+  char *address = fn_copy;
+  int argc = 0;
 
+  while(true)
+  {
+	  if (argv[argc])
+		  argc++;
+	  else 
+		  break;
+  }
+  
+  printf("argc is %d \n", argc);
+
+  for (int i = argc - 1; i >=0 ;i--)
+  {
+	memcpy(address, argv[i], strlen(argv[i]));
+	address = address + strlen(argv[i]);
+	memcpy(address, " ", 1);//delimiter
+	address = address + 1;
+	printf("argv[%d] %s %d \n", i,argv[i], strlen(argv[i]));
+  }
+	/* copy end of string char */
+  memcpy(address, "\0", 1);
+  hex_dump(0, fn_copy,  100, true);
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
 
@@ -50,9 +75,9 @@ process_execute (char **argv)
 /* A thread function that loads a user process and starts it
    running. */
 static void
-start_process (void *file_name_)
+start_process (void *pg)
 {
-  char *file_name = file_name_;
+  char *file_name = pg;
   struct intr_frame if_;
   bool success;
 
@@ -64,6 +89,26 @@ start_process (void *file_name_)
 
   success = load (file_name, &if_.eip, &if_.esp);
   
+  char *save_ptr = NULL;
+  char *tkn;
+  char *ptr = pg;
+  int bytes = 0;
+  int argc = 0;
+
+/*Reading the tokens, counting and printing them*/
+  for ( argc = 0; ;argc++) {
+	 tkn = strtok_r(ptr, " ", &save_ptr);
+	 if (tkn)
+		 printf("token %d %s\n", argc, tkn);
+	 else 
+		 break;
+	 ptr = NULL; 
+	
+	 bytes = bytes + strlen(tkn);
+  }
+
+  printf("Total arguments %d  size %d bytes\n", argc, bytes);
+
   /* If load failed, quit. */
   palloc_free_page (file_name);
   if (!success) 
