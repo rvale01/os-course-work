@@ -154,7 +154,7 @@ start_process (void *pg)
   address = address - 4;
   memset(address,0,4);
   if_.esp = address;
-
+  free (argp);
   //hex_dump (if_.esp - 100, if_.esp, 100, true);
 
   /* If load failed, quit. */
