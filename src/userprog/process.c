@@ -114,11 +114,11 @@ start_process (void *pg)
  //push argv[][]
   for (int i = 0;i < argc ;i++) 
   {
-	 argp[i] = (uint32_t)address;
 	// printf("TOKEN %d %s\n", i, ptr);
 
 	 address = address - (strlen(ptr) + 1);
-	 memcpy(address , ptr,strlen(ptr) + 1);
+	 argp[i] = (uint32_t)address;
+	 memcpy(address, ptr, strlen(ptr) + 1);
 	 ptr = ptr + strlen(ptr) + 1;
   }
 
@@ -141,7 +141,7 @@ start_process (void *pg)
 	memcpy(address, (void *)&argp[i], 4);
   }
   // argv 
-  uint32_t argv = address - 4;
+  uint32_t argv = address;
 
   address = address - 4;
   memcpy(address, &argv, 4);
@@ -153,9 +153,9 @@ start_process (void *pg)
   // Null pointer
   address = address - 4;
   memset(address,0,4);
+  //hex_dump (if_.esp - 100, if_.esp - 100, 100, true);
   if_.esp = address;
   free (argp);
-  //hex_dump (if_.esp - 100, if_.esp, 100, true);
 
   /* If load failed, quit. */
   palloc_free_page (pg);
