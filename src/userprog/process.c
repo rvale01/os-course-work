@@ -15,6 +15,7 @@
 #include "threads/init.h"
 #include "threads/interrupt.h"
 #include "threads/palloc.h"
+#include "threads/malloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 
@@ -26,8 +27,9 @@ static bool load (const char *cmdline, void (**eip) (void), void **esp);
    before process_execute() returns.  Returns the new process's
    thread id, or TID_ERROR if the thread cannot be created. */
 tid_t
-process_execute (const char *file_name) 
+process_execute (char **argv)
 {
+  const char *file_name = argv[0]; 
   char *fn_copy;
   tid_t tid;
 
@@ -37,7 +39,30 @@ process_execute (const char *file_name)
   if (fn_copy == NULL)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
+  
+  char *address = fn_copy;
+  int argc = 0;
 
+  while(true)
+  {
+	  if (argv[argc])
+		  argc++;
+	  else 
+		  break;
+  }
+  
+  //printf("argc is %d \n", argc);
+
+  for (int i = argc - 1; i >=0 ;i--)
+  {
+	memcpy(address, argv[i], strlen(argv[i]));
+	address = address + strlen(argv[i]);
+	memcpy(address, " ", 1);//delimiter
+	address = address + 1;
+//	printf("argv[%d] %s %d \n", i,argv[i], strlen(argv[i]));
+  }
+	/* copy end of string char */
+  memcpy(address, "\0", 1);
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
 
@@ -49,11 +74,18 @@ process_execute (const char *file_name)
 /* A thread function that loads a user process and starts it
    running. */
 static void
-start_process (void *file_name_)
+start_process (void *pg)
 {
-  char *file_name = file_name_;
+  char *file_name;
   struct intr_frame if_;
   bool success;
+  char *save_ptr = NULL;
+  char *tkn;
+  char *ptr = pg;
+  int bytes = 0;
+  int argc = 0;
+  uint32_t *argp;
+  char *address;
 
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
@@ -61,10 +93,72 @@ start_process (void *file_name_)
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
 
+ /*Reading the already reversed tokens, counting and printing them*/
+  for (argc = 0; ;argc++) {
+	 tkn = strtok_r(ptr, " ", &save_ptr);
+	 if (tkn) {
+		// printf("token %d %s\n", argc, tkn);
+		 file_name = tkn;
+	 } else {
+		 break;
+	 }
+	 ptr = NULL; 
+	
+	 bytes = bytes + strlen(tkn) + 1;
+  }
   success = load (file_name, &if_.eip, &if_.esp);
   
+  address = if_.esp;
+  ptr = pg;
+  argp = malloc(sizeof(uint32_t) * argc);
+ //push argv[][]
+  for (int i = 0;i < argc ;i++) 
+  {
+	// printf("TOKEN %d %s\n", i, ptr);
+
+	 address = address - (strlen(ptr) + 1);
+	 argp[i] = (uint32_t)address;
+	 memcpy(address, ptr, strlen(ptr) + 1);
+	 ptr = ptr + strlen(ptr) + 1;
+  }
+
+ //Push word align
+  int wa = 4 - (bytes % 4);
+  //printf("Total arguments %d  size %d bytes wa %d %x\n", argc, bytes, wa, address);
+  if (wa < 4) {
+	address = address - wa;
+	memset(address, 0, wa);
+  }
+
+  // Null pointer
+  address = address - 4;
+  memset(address,0 ,4);
+
+  // argv[] pointers
+    for (int i = 0;i < argc ;i++) 
+  {
+	address = address - 4;
+	memcpy(address, (void *)&argp[i], 4);
+  }
+  // argv 
+  uint32_t argv = address;
+
+  address = address - 4;
+  memcpy(address, &argv, 4);
+	
+  //argc
+  address = address - 4;
+  memcpy(address, &argc, 4);
+
+  // Null pointer
+  address = address - 4;
+  memset(address,0,4);
+  //hex_dump (if_.esp - 100, if_.esp - 100, 100, true);
+  if_.esp = address;
+  free (argp);
+
   /* If load failed, quit. */
-  palloc_free_page (file_name);
+  palloc_free_page (pg);
   if (!success) 
     thread_exit ();
 
@@ -102,7 +196,8 @@ process_exit (void)
 {
   struct thread *cur = thread_current ();
   uint32_t *pd;
-
+  printf("%s: exit_code(%d)\n",cur->name,cur->exit_code);
+  
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
@@ -443,7 +538,8 @@ setup_stack (void **esp)
     {
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
       if (success) {
-        *esp = PHYS_BASE;
+        *esp = PHYS_BASE - 12;
+
       } else
         palloc_free_page (kpage);
     }
