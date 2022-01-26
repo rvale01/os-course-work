@@ -1,1 +1,3 @@
-This is a variant of the Pintos Operating System for use as part of Operating Systems module at the University of the West of England (UWE).
+# OS-CW-Group-24
+
+Group 24 Course work for Operating Systems 
