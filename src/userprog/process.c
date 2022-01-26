@@ -59,15 +59,12 @@ start_process (void *file_name_)
   char *file_name = file_name_;
   struct intr_frame if_;
   bool success;
-  // char *ptr = pg;
-  // int bytes = 0;
+
+  //variables initialised for later used. They will be used to save the arguments.
   int argc = 0;
   char **argv;
   argv = (char **)malloc(sizeof(char));
   
-  // uint32_t *argp;
-  // char *address;
-
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
@@ -75,18 +72,22 @@ start_process (void *file_name_)
   if_.eflags = FLAG_IF | FLAG_MBS;
 
 
-  char *token;                                                                  
+  //variables initialised to do the loop in which the splitting will be done.
+  char *token;                                                                
   char *save_ptr;
 
+//loop where strtok_r is called.
   for (token = strtok_r (file_name, " ", &save_ptr); token != NULL;
   token = strtok_r (NULL, " ", &save_ptr)){  
+    //the token returned will then be saved in the argv variable and the counter is increased.
+    //printf("The token is: %s", token)
 	  argv[argc] = token;
 	  argc++;
   }
-    
-  char *address = file_name;
-  int argc = 0;
-  
+
+  //printf("The argc is %d and the argv[0] contains %s", argc, argv[0])
+
+  //the struct is declared and the values are then saved into it  
   struct arguments *args, temp_args;
   args = &temp_args;
   args->argc = argc;
@@ -481,6 +482,7 @@ setup_stack (void **esp, struct arguments *args)
       } else
         palloc_free_page (kpage);
     }
+
   int length_argv = 0; 
   for(int x = (args->argc - 1); x>=0; x--){
     *esp -= strlen(args->argv[x]) + 1;
@@ -503,7 +505,7 @@ setup_stack (void **esp, struct arguments *args)
   *esp -= 4;
   memcpy(*esp, &zero, 4);
 
-  //wrtiting the addresses of each argument in reverse order   
+  //writing the addresses of each argument in reverse order   
   for(int x = (args->argc - 1); x>=1; x--){
 	  *esp -= sizeof(&args->argv[x]);
 	  memcpy(*esp, (void *)&(args->argv[x]), 4);
