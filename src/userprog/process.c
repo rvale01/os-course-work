@@ -20,16 +20,20 @@
 #include "threads/vaddr.h"
 
 static thread_func start_process NO_RETURN;
-static bool load (const char *cmdline, void (**eip) (void), void **esp);
+struct arguments {                                                              
+    int argc;                                                                   
+    char **argv;                                                                
+    char *cmd_line;                                                             
+}; 
+static bool load (struct arguments *args, void (**eip) (void), void **esp);
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
    thread id, or TID_ERROR if the thread cannot be created. */
 tid_t
-process_execute (char **argv)
+process_execute (const char *file_name)
 {
-  const char *file_name = argv[0]; 
   char *fn_copy;
   tid_t tid;
 
@@ -39,30 +43,6 @@ process_execute (char **argv)
   if (fn_copy == NULL)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
-  
-  char *address = fn_copy;
-  int argc = 0;
-
-  while(true)
-  {
-	  if (argv[argc])
-		  argc++;
-	  else 
-		  break;
-  }
-  
-  //printf("argc is %d \n", argc);
-
-  for (int i = argc - 1; i >=0 ;i--)
-  {
-	memcpy(address, argv[i], strlen(argv[i]));
-	address = address + strlen(argv[i]);
-	memcpy(address, " ", 1);//delimiter
-	address = address + 1;
-//	printf("argv[%d] %s %d \n", i,argv[i], strlen(argv[i]));
-  }
-	/* copy end of string char */
-  memcpy(address, "\0", 1);
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
 
@@ -74,18 +54,19 @@ process_execute (char **argv)
 /* A thread function that loads a user process and starts it
    running. */
 static void
-start_process (void *pg)
+start_process (void *file_name_)
 {
-  char *file_name;
+  char *file_name = file_name_;
   struct intr_frame if_;
   bool success;
-  char *save_ptr = NULL;
-  char *tkn;
-  char *ptr = pg;
-  int bytes = 0;
+  // char *ptr = pg;
+  // int bytes = 0;
   int argc = 0;
-  uint32_t *argp;
-  char *address;
+  char **argv;
+  argv = (char **)malloc(sizeof(char));
+  
+  // uint32_t *argp;
+  // char *address;
 
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
@@ -93,72 +74,29 @@ start_process (void *pg)
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
 
- /*Reading the already reversed tokens, counting and printing them*/
-  for (argc = 0; ;argc++) {
-	 tkn = strtok_r(ptr, " ", &save_ptr);
-	 if (tkn) {
-		// printf("token %d %s\n", argc, tkn);
-		 file_name = tkn;
-	 } else {
-		 break;
-	 }
-	 ptr = NULL; 
-	
-	 bytes = bytes + strlen(tkn) + 1;
+
+  char *token;                                                                  
+  char *save_ptr;
+
+  for (token = strtok_r (file_name, " ", &save_ptr); token != NULL;
+  token = strtok_r (NULL, " ", &save_ptr)){  
+	  argv[argc] = token;
+	  argc++;
   }
-  success = load (file_name, &if_.eip, &if_.esp);
+    
+  char *address = file_name;
+  int argc = 0;
   
-  address = if_.esp;
-  ptr = pg;
-  argp = malloc(sizeof(uint32_t) * argc);
- //push argv[][]
-  for (int i = 0;i < argc ;i++) 
-  {
-	// printf("TOKEN %d %s\n", i, ptr);
+  struct arguments *args, temp_args;
+  args = &temp_args;
+  args->argc = argc;
+  args->argv = argv;
+  args->cmd_line = file_name_;                                              
 
-	 address = address - (strlen(ptr) + 1);
-	 argp[i] = (uint32_t)address;
-	 memcpy(address, ptr, strlen(ptr) + 1);
-	 ptr = ptr + strlen(ptr) + 1;
-  }
-
- //Push word align
-  int wa = 4 - (bytes % 4);
-  //printf("Total arguments %d  size %d bytes wa %d %x\n", argc, bytes, wa, address);
-  if (wa < 4) {
-	address = address - wa;
-	memset(address, 0, wa);
-  }
-
-  // Null pointer
-  address = address - 4;
-  memset(address,0 ,4);
-
-  // argv[] pointers
-    for (int i = 0;i < argc ;i++) 
-  {
-	address = address - 4;
-	memcpy(address, (void *)&argp[i], 4);
-  }
-  // argv 
-  uint32_t argv = address;
-
-  address = address - 4;
-  memcpy(address, &argv, 4);
-	
-  //argc
-  address = address - 4;
-  memcpy(address, &argc, 4);
-
-  // Null pointer
-  address = address - 4;
-  memset(address,0,4);
-  //hex_dump (if_.esp - 100, if_.esp - 100, 100, true);
-  if_.esp = address;
-  free (argp);
+  success = load (args, &if_.eip, &if_.esp);
 
   /* If load failed, quit. */
-  palloc_free_page (pg);
+  palloc_free_page (file_name_);
   if (!success) 
     thread_exit ();
 
@@ -295,7 +233,7 @@ struct Elf32_Phdr
 #define PF_W 2          /* Writable. */
 #define PF_R 4          /* Readable. */
 
-static bool setup_stack (void **esp);
+static bool setup_stack (void **esp, struct arguments *args);
 static bool validate_segment (const struct Elf32_Phdr *, struct file *);
 static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
                           uint32_t read_bytes, uint32_t zero_bytes,
@@ -306,7 +244,7 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
    and its initial stack pointer into *ESP.
    Returns true if successful, false otherwise. */
 bool
-load (const char *file_name, void (**eip) (void), void **esp) 
+load (struct arguments *args void (**eip) (void), void **esp) 
 {
   struct thread *t = thread_current ();
   struct Elf32_Ehdr ehdr;
@@ -322,11 +260,11 @@ load (const char *file_name, void (**eip) (void), void **esp)
   process_activate ();
 
   /* Open executable file. */
-  file = filesys_open (file_name);
+  file = filesys_open (args->cmd_line);
 
   if (file == NULL) 
     {
-	printf ("load: %s: open failed\n", file_name);
+	printf ("load: %s: open failed\n", args->cmd_line);
       goto done; 
     }
 
@@ -339,7 +277,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
       || ehdr.e_phentsize != sizeof (struct Elf32_Phdr)
       || ehdr.e_phnum > 1024) 
     {
-      printf ("load: %s: error loading executable\n", file_name);
+      printf ("load: %s: error loading executable\n", args->cmd_line);
       goto done; 
     }
 
@@ -403,7 +341,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
     }
 
   /* Set up stack. */
-  if (!setup_stack (esp))
+  if (!setup_stack (esp, args))
     goto done;
 
   /* Start address. */
@@ -528,7 +466,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 /* Create a minimal stack by mapping a zeroed page at the top of
    user virtual memory. */
 static bool
-setup_stack (void **esp) 
+setup_stack (void **esp, struct arguments *args) 
 {
   uint8_t *kpage;
   bool success = false;
@@ -543,6 +481,47 @@ setup_stack (void **esp)
       } else
         palloc_free_page (kpage);
     }
+  int length_argv = 0; 
+  for(int x = (args->argc - 1); x>=0; x--){
+    *esp -= strlen(args->argv[x]) + 1;
+    length_argv += (strlen(args->argv[x]) + 1);
+    memcpy(*esp,args->argv[x],strlen(args->argv[x]) + 1);
+  }
+
+  int zero = 0; 
+
+  //word alignement
+  if((length_argv%4) != 0){        
+	  int word_align = 4 - (length_argv%4);
+	  *esp -= word_align;
+    for(int y = 0; y<word_align; y++){
+      memset(*esp, 0, word_align); 
+    }
+  }
+
+  //writing 4 bytes of 0s to the stack
+  *esp -= 4;
+  memcpy(*esp, &zero, 4);
+
+  //wrtiting the addresses of each argument in reverse order   
+  for(int x = (args->argc - 1); x>=1; x--){
+	  *esp -= sizeof(&args->argv[x]);
+	  memcpy(*esp, (void *)&(args->argv[x]), 4);
+  }
+
+  //writing the command (argv[0]) to the stack
+  *esp -= sizeof(&args->argv[0]);
+  
+  //writing the number of arguments to the stack
+  //spread over 4 bytes
+  *esp -= 4;
+  memcpy(*esp, &args->argc, 4); 
+
+  *esp -= 1;
+  memcpy(*esp, &zero, 1);
+  // hex_dump(0, *esp, 36, true); 
+
+  
   return success;
 }
 
