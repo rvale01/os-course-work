@@ -511,6 +511,7 @@ setup_stack (void **esp, struct arguments *args)
 
   //writing the command (argv[0]) to the stack
   *esp -= sizeof(&args->argv[0]);
+  memcpy(*esp, (void *)&(&args->argv[0]), 4);
   
   //writing the number of arguments to the stack
   //spread over 4 bytes
