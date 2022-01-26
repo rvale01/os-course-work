@@ -1,4 +1,4 @@
-#include "userprog/syscall.h"
+#include "userprog/syscall.h"     
 #include <stdio.h>
 #include <syscall-nr.h>
 #include "threads/interrupt.h"
@@ -6,7 +6,7 @@
 #include <userprog/process.h>
 #include <filesys/file.h> 
 #include <filesys/filesys.h>
-#define ARG_1 4
+#define ARG_1 4  /* trying to fix an error inside the code by defining the ARG */
 #define ARG_2 8
 #define ARG_3 12
 #define ERROR -1
@@ -22,6 +22,8 @@ syscall_init (void)
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
 
+/* Function declarations which were also declared in  syscall.h*/
+
 void syscall_exit(int);
 int open (const char *file);
 int read (int fd, void *buffer, unsigned size);
@@ -31,7 +33,7 @@ int filesize (int fd);
 bool remove (const char *file);
 int exec (const char *cmd_line);
 
-
+/* End of function declaration */
 
 
 static void
@@ -39,6 +41,7 @@ syscall_handler (struct intr_frame *f UNUSED)
 {
   struct thread *cur = thread_current ();
   int syscall_num;
+  lock_init(&my_lock); /* lock for the system calls which will handle our files */
   int *sp = f->esp;
   check_address(*sp, f ->esp);
   int syscall_number = *((int*)f->esp);
@@ -76,16 +79,16 @@ syscall_handler (struct intr_frame *f UNUSED)
 	  int code = (int)load_stack(f, ARG_CODE);
 	  
 
-	  switch (code) {
+	  switch (code) {  /* "code" is the representation of what the system call will chose */
 		  case SYS_READ:
 			  break;
                  	  }
-		  case SYS_EXIT:
+		  case SYS_EXIT: /* exit function which will print 0 if the code is  successful or 1 if it failed */
 			  {
 			  handle_exit((int)load_stack(f,ARG_1));
 			  break;
 			  }
-	          case SYS_WRITE:
+	          case SYS_WRITE: /* It will allow us to write bytes in a file */
 			  {
 			  int result = handle_write(
 			 (int)load_stack(f,ARG_1),
@@ -94,28 +97,28 @@ syscall_handler (struct intr_frame *f UNUSED)
 			  f->esp = result;
 			  break;
 			  }
-		  case SYS_EXEC:
+		  case SYS_EXEC: /* to execute a program */
 			  {
 			  f->eax = exec((const char*) load_stack(f,ARG_1));
 			  break;
 			  }
-		  case SYS_OPEN:
+		  case SYS_OPEN: /* open a file  on the   system */
 			  {
 			  f->eax = open((const char *)load_stack(f,ARG_1]);
 			  break;
 			  }
-		  case SYS_HAL:
+		  case SYS_HALT: /* program goes into a halt function from where it can call theexit function/ shutdown power */
 			  {
 			  halt();
 			  break;
 			  }
-	          case SYS_CLOSE:
+	          case SYS_CLOSE: 
 			  {
 			  get_argument(esp,arg,1);
 			  close(arg[0]);
 			  break;
 			  }
-		  case  SYS_CREATE:
+		  case  SYS_CREATE: /* Creates a file on the system */   
 		  {
 		  f->eax = create((const char*)load_stack(f,ARG_1), (unsigned)load_stack(f,ARG_2));
 		  break;
@@ -128,10 +131,10 @@ syscall_handler (struct intr_frame *f UNUSED)
 
 void halt(void)
 {
-	shutdown_power_off():
+	shutdown_power_off(): /* shuts down the system*/
 }
 
-int open(const char *file)
+int open(const char *file) /*   takes the string/argument,  open the file in pintos and uses the "add_file in order to get the fd*/
 {
 	int fd;
 	struct file *new_file;
@@ -161,13 +164,13 @@ close(int fd)
 	      thread_current()->file_descriptor[fd]=NULL;
        }
 
-void syscall_exit(int status)
+void syscall_exit(int status) /* calls thread exit, exiting the code */
 {
 	struct thread *cur = thread_current();
 	cur ->exit_status =status;
 	thread_exit();
 }
-bool create (const char *file, unsigned initial_size)
+bool create (const char *file, unsigned initial_size) /*  a string and  the size of arguments are passed down to the  filesys_Create function to create a file on the system*/
 {
 	lock_acquire(&my_lock);
 	bool success = filesys_create(file, initial_size);
@@ -176,12 +179,12 @@ bool create (const char *file, unsigned initial_size)
 }
 
 
-int read (int fd, void*buffer, unssigned size)
+int read (int fd, void*buffer, unssigned size) /* reads the file on the system */
 {
 	return 0;
 }
 
-bool remove (const char *file)
+bool remove (const char *file) /* removes   the file from the system,  if it fails it will return a false value */
 {
 	lock_acquire(&my_lock);
 	bool success = filesys_remove(file);
@@ -189,7 +192,7 @@ bool remove (const char *file)
 	return success;
 }
 
-int exec (const char *cmd_line)
+int exec (const char *cmd_line) /* executes a program, return a thread id */
 {
 	int id = process_execute(cmd_line);
 	return id;
